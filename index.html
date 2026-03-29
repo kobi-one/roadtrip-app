@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoadTrip — Music for the Miles</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
+<style>
+  :root {
+    --road: #0a0a0a;
+    --asphalt: #141414;
+    --stripe: #1c1c1c;
+    --accent: #f5c518;
+    --accent2: #e8440a;
+    --text: #f0ede6;
+    --muted: #6b6860;
+    --card: #181818;
+    --spotify: #1DB954;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--road);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 100vh;
+    background: repeating-linear-gradient(
+      to bottom,
+      var(--accent) 0px, var(--accent) 40px,
+      transparent 40px, transparent 80px
+    );
+    opacity: 0.07;
+    animation: road 1.2s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+  }
+  @keyframes road { to { background-position: 0 80px; } }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+  }
+
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #222;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 42px;
+    letter-spacing: 3px;
+    line-height: 1;
+    color: var(--text);
+  }
+  .logo span { color: var(--accent); }
+
+  /* ── SPOTIFY LOGIN SCREEN ── */
+  #login-screen {
+    text-align: center;
+    padding: 60px 20px;
+  }
+  #login-screen .big-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+  }
+  #login-screen .big-logo span { color: var(--accent); }
+  #login-screen p {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 40px;
+    line-height: 1.6;
+  }
+  .spotify-login-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--spotify);
+    color: #000;
+    border: none;
+    padding: 16px 32px;
+    border-radius: 50px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.5px;
+    transition: transform 0.15s, opacity 0.15s;
+    text-decoration: none;
+  }
+  .spotify-login-btn:hover { transform: scale(1.04); opacity: 0.93; }
+  .spotify-login-btn svg { width: 22px; height: 22px; fill: #000; }
+  .login-note {
+    margin-top: 20px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* ── MAIN APP ── */
+  #main-app { display: none; }
+
+  /* Location strip */
+  .location-strip {
+    background: var(--stripe);
+    border: 1px solid #252525;
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    position: relative;
+    overflow: hidden;
+  }
+  .location-strip::after {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .location-strip.active::after { opacity: 1; }
+  .loc-icon { width: 32px; height: 32px; border-radius: 50%; background: #222; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+  .loc-main { flex: 1; min-width: 0; }
+  .loc-city { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .loc-coords { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; margin-top: 2px; }
+  .loc-btn { background: none; border: 1px solid #333; color: var(--muted); font-size: 11px; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-family: 'DM Sans', sans-serif; letter-spacing: 1px; text-transform: uppercase; transition: all 0.2s; white-space: nowrap; }
+  .loc-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* User bar */
+  .user-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 10px 14px;
+    background: #111;
+    border-radius: 4px;
+    border: 1px solid #1a1a1a;
+  }
+  .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--spotify); display: flex; align-items: center; justify-content: center; font-size: 12px; overflow: hidden; flex-shrink: 0; }
+  .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .user-name { font-size: 12px; color: var(--muted); flex: 1; }
+  .user-name strong { color: var(--text); }
+  .logout-btn { font-size: 10px; color: var(--muted); background: none; border: 1px solid #2a2a2a; padding: 4px 10px; border-radius: 2px; cursor: pointer; letter-spacing: 1px; text-transform: uppercase; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+  .logout-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+
+  /* Region strip */
+  .section-label { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: #1e1e1e; }
+  .region-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 28px; scrollbar-width: none; }
+  .region-strip::-webkit-scrollbar { display: none; }
+  .region-chip { flex-shrink: 0; padding: 8px 14px; background: #141414; border: 1px solid #222; border-radius: 3px; font-size: 11px; cursor: pointer; transition: all 0.2s; font-family: 'DM Mono', monospace; color: var(--muted); }
+  .region-chip:hover { border-color: #444; color: var(--text); }
+  .region-chip.active { background: #1e1a00; border-color: #4a3800; color: var(--accent); }
+
+  /* Now playing */
+  .now-playing { background: var(--card); border-radius: 8px; overflow: hidden; margin-bottom: 20px; border: 1px solid #222; }
+  .np-header { padding: 12px 18px; background: #111; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1a1a; }
+  .np-label { font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+  .np-region-badge { font-size: 11px; background: #1e1a00; border: 1px solid #3a3000; color: var(--accent); padding: 3px 10px; border-radius: 2px; letter-spacing: 1px; font-family: 'DM Mono', monospace; }
+  .np-body { padding: 20px 18px; display: flex; gap: 16px; align-items: center; }
+  .np-art { width: 72px; height: 72px; border-radius: 4px; background: #222; flex-shrink: 0; overflow: hidden; }
+  .np-art img { width: 100%; height: 100%; object-fit: cover; }
+  .np-art .art-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 28px; background: #1a1a1a; }
+  .np-info { flex: 1; min-width: 0; }
+  .np-song { font-size: 16px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+  .np-artist { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .np-why { font-size: 11px; color: #4a6a8a; font-style: italic; line-height: 1.4; }
+  .np-controls { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+  .play-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--spotify); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; transition: transform 0.15s, opacity 0.15s; flex-shrink: 0; }
+  .play-btn:hover { transform: scale(1.08); opacity: 0.9; }
+  .play-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .np-progress { padding: 0 18px 16px; }
+  .progress-bar { height: 2px; background: #222; border-radius: 1px; overflow: hidden; cursor: pointer; }
+  .progress-fill { height: 100%; background: var(--spotify); width: 0%; transition: width 0.5s linear; }
+  .progress-times { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
+
+  /* Track list */
+  .track-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 24px; }
+  .track-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 4px; cursor: pointer; transition: background 0.15s; border: 1px solid transparent; }
+  .track-item:hover { background: #181818; border-color: #222; }
+  .track-item.active { background: #0a1a0a; border-color: #1a3a1a; }
+  .track-num { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; width: 20px; text-align: right; flex-shrink: 0; }
+  .track-item.active .track-num { color: var(--spotify); }
+  .track-mini-art { width: 38px; height: 38px; border-radius: 3px; background: #222; flex-shrink: 0; overflow: hidden; }
+  .track-mini-art img { width: 100%; height: 100%; object-fit: cover; }
+  .track-mini-art .mini-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .track-meta { flex: 1; min-width: 0; }
+  .track-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .track-duration { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; flex-shrink: 0; }
+
+  .status-msg { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+  .status-msg .big { font-size: 36px; margin-bottom: 12px; }
+
+  .eq { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .eq-bar { width: 3px; background: var(--spotify); border-radius: 1px; animation: eq-bounce 0.8s ease-in-out infinite; }
+  .eq-bar:nth-child(1) { animation-delay: 0s; }
+  .eq-bar:nth-child(2) { animation-delay: 0.15s; }
+  .eq-bar:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes eq-bounce { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+  .spinner { width: 20px; height: 20px; border: 2px solid #333; border-top-color: var(--spotify); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* SDK not ready notice */
+  .sdk-notice { background: #0d1a0d; border: 1px solid #1a3a1a; border-radius: 4px; padding: 12px 16px; margin-bottom: 16px; font-size: 12px; color: #5a9a6a; display: none; }
+  .sdk-notice.show { display: block; }
+
+  @media (max-width: 420px) {
+    .logo { font-size: 34px; }
+    .np-body { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══════════════════════════════════════
+       LOGIN SCREEN
+  ══════════════════════════════════════ -->
+  <div id="login-screen">
+    <div class="big-logo">ROAD<span>TRIP</span></div>
+    <p>Location-aware music for the open road.<br>Sign in with Spotify to start your journey.</p>
+    <a id="login-btn" class="spotify-login-btn" href="#">
+      <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      Connect with Spotify
+    </a>
+    <div class="login-note">Requires Spotify Premium for full playback</div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       MAIN APP
+  ══════════════════════════════════════ -->
+  <div id="main-app">
+    <header>
+      <div>
+        <div class="logo">ROAD<span>TRIP</span></div>
+        <div style="font-size:11px;color:var(--muted);letter-spacing:1.5px;margin-top:2px">MUSIC FOR THE MILES</div>
+      </div>
+      <div style="text-align:right">
+        <div id="distance-display" style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);line-height:1">0.0</div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:2px">MILES DRIVEN</div>
+      </div>
+    </header>
+
+    <!-- User bar -->
+    <div class="user-bar">
+      <div class="user-avatar" id="user-avatar">♪</div>
+      <div class="user-name">Signed in as <strong id="user-display-name">...</strong></div>
+      <button class="logout-btn" onclick="logout()">SIGN OUT</button>
+    </div>
+
+    <!-- SDK notice -->
+    <div class="sdk-notice" id="sdk-notice">
+      ⏳ Spotify player initializing... this takes a few seconds on first load.
+    </div>
+
+    <!-- Location strip -->
+    <div class="location-strip" id="loc-strip">
+      <div class="loc-icon">📍</div>
+      <div class="loc-main">
+        <div class="loc-city" id="loc-city">Tap LOCATE to find your position</div>
+        <div class="loc-coords" id="loc-coords">---.---- , ---.----</div>
+      </div>
+      <button class="loc-btn" id="loc-btn" onclick="requestLocation()">LOCATE</button>
+    </div>
+
+    <!-- Region selector -->
+    <div class="section-label">Tune to a region</div>
+    <div class="region-strip" id="region-strip"></div>
+
+    <!-- Now playing -->
+    <div class="section-label">Now playing</div>
+    <div class="now-playing" id="now-playing">
+      <div class="np-header">
+        <span class="np-label">Now Playing</span>
+        <span class="np-region-badge" id="np-region">—</span>
+      </div>
+      <div class="np-body">
+        <div class="np-art">
+          <div class="art-placeholder" id="np-art-placeholder">🎵</div>
+          <img id="np-art-img" src="" alt="" style="display:none">
+        </div>
+        <div class="np-info">
+          <div class="np-song" id="np-song">Select a region to begin</div>
+          <div class="np-artist" id="np-artist">—</div>
+          <div class="np-why" id="np-why">Your road trip soundtrack awaits</div>
+        </div>
+        <div class="np-controls">
+          <button class="play-btn" id="play-btn" onclick="togglePlay()" disabled>▶</button>
+          <div class="eq" id="eq-display" style="display:none">
+            <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+          </div>
+        </div>
+      </div>
+      <div class="np-progress">
+        <div class="progress-bar" id="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="progress-times">
+          <span id="time-current">0:00</span>
+          <span id="time-total">0:00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Track queue -->
+    <div class="section-label">Queue</div>
+    <div class="track-list" id="track-list">
+      <div class="status-msg">
+        <div class="big">🗺️</div>
+        Get your location or tap a region above
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════
+const CLIENT_ID = '2f948267a68e496eb3ba6a8ce3768393';
+const REDIRECT_URI = 'https://kobi-one.github.io/roadtrip-app/';
+const SCOPES = [
+  'streaming',
+  'user-read-email',
+  'user-read-private',
+  'user-read-playback-state',
+  'user-modify-playback-state'
+].join(' ');
+
+// ═══════════════════════════════════════════════════
+// MUSIC DATABASE
+// ═══════════════════════════════════════════════════
+const MUSIC_DB = {
+  "Detroit, MI":     { emoji:"🏭", why:"Motor City — hip-hop royalty",          searches:["Eminem Lose Yourself","Big Sean One Man Can Change the World","Jack White Seven Nation Army","Kid Rock All Summer Long"] },
+  "Atlanta, GA":     { emoji:"🍑", why:"ATL trap capital of the world",          searches:["OutKast Hey Ya","21 Savage Rockstar","Childish Gambino Redbone","Lil Jon Get Low"] },
+  "Georgia":         { emoji:"🌿", why:"Georgia on my mind",                     searches:["Ray Charles Georgia On My Mind","REM Losing My Religion","B-52s Rock Lobster","Gladys Knight Midnight Train to Georgia"] },
+  "Nashville, TN":   { emoji:"🎸", why:"Music City — country heartland",         searches:["Johnny Cash Ring of Fire","Dolly Parton Jolene","Kacey Musgraves Follow Your Arrow","Taylor Swift Love Story"] },
+  "New Orleans, LA": { emoji:"🎺", why:"Where jazz was born on Bourbon St",      searches:["Louis Armstrong What A Wonderful World","Fats Domino Blueberry Hill","Dr John Right Place Wrong Time","Allen Toussaint Southern Nights"] },
+  "Chicago, IL":     { emoji:"🌬️", why:"Windy City blues and rap royalty",       searches:["Chance the Rapper No Problem","Kanye West Gold Digger","Muddy Waters Hoochie Coochie Man","Wilco Jesus Etc"] },
+  "New York, NY":    { emoji:"🗽", why:"Birthplace of hip-hop and punk",         searches:["Jay-Z Empire State of Mind","The Notorious BIG Juicy","Lou Reed Walk on the Wild Side","LCD Soundsystem All My Friends"] },
+  "Los Angeles, CA": { emoji:"🌴", why:"Sun surf and West Coast swagger",        searches:["Kendrick Lamar HUMBLE","Dr Dre Still DRE","The Doors LA Woman","Snoop Dogg Gin and Juice"] },
+  "Seattle, WA":     { emoji:"☔", why:"Grunge city — rainy day anthems",        searches:["Nirvana Smells Like Teen Spirit","Pearl Jam Black","Soundgarden Black Hole Sun","Macklemore Thrift Shop"] },
+  "Austin, TX":      { emoji:"🤠", why:"Keep Austin Weird — live music capital", searches:["Willie Nelson On The Road Again","Gary Clark Jr Bright Lights","Willie Nelson Always On My Mind","Spoon The Underdog"] },
+  "Miami, FL":       { emoji:"🌊", why:"Magic City — Latin heat and bass",       searches:["Gloria Estefan Conga","Pitbull International Love","Will Smith Miami","Camila Cabello Havana"] },
+  "Memphis, TN":     { emoji:"🎷", why:"Birthplace of rock and soul",            searches:["Elvis Presley Hound Dog","BB King The Thrill Is Gone","Al Green Lets Stay Together","Three 6 Mafia Stay Fly"] },
+  "Minneapolis, MN": { emoji:"❄️", why:"The Purple One's purple city",           searches:["Prince Purple Rain","Prince When Doves Cry","Lizzo Truth Hurts","The Replacements Bastards of Young"] },
+  "San Francisco, CA":{ emoji:"🌉", why:"Summer of Love psychedelic roots",      searches:["Grateful Dead Truckin","Jefferson Airplane White Rabbit","Steve Miller Band The Joker","Metallica Master of Puppets"] },
+  "On the Highway":  { emoji:"🛣️", why:"Classic road trip anthems",             searches:["Tom Petty Running Down A Dream","Bruce Springsteen Born To Run","Eagles Hotel California","Fleetwood Mac Go Your Own Way"] }
+};
+
+// ═══════════════════════════════════════════════════
+// AUTH — PKCE flow (no client secret needed)
+// ═══════════════════════════════════════════════════
+function generateCodeVerifier(length = 128) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let result = '';
+  const arr = new Uint8Array(length);
+  crypto.getRandomValues(arr);
+  arr.forEach(v => result += chars[v % chars.length]);
+  return result;
+}
+
+async function generateCodeChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+async function redirectToSpotify() {
+  const verifier = generateCodeVerifier();
+  const challenge = await generateCodeChallenge(verifier);
+  sessionStorage.setItem('pkce_verifier', verifier);
+
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    code_challenge_method: 'S256',
+    code_challenge: challenge,
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + params;
+}
+
+async function exchangeCodeForToken(code) {
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: REDIRECT_URI,
+    client_id: CLIENT_ID,
+    code_verifier: verifier,
+  });
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    const expires = Date.now() + data.expires_in * 1000;
+    localStorage.setItem('spotify_token', data.access_token);
+    localStorage.setItem('spotify_refresh', data.refresh_token);
+    localStorage.setItem('spotify_expires', expires);
+    return data.access_token;
+  }
+  throw new Error('Token exchange failed: ' + JSON.stringify(data));
+}
+
+async function refreshToken() {
+  const refresh = localStorage.getItem('spotify_refresh');
+  if (!refresh) return null;
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: refresh,
+    client_id: CLIENT_ID,
+  });
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    const expires = Date.now() + data.expires_in * 1000;
+    localStorage.setItem('spotify_token', data.access_token);
+    localStorage.setItem('spotify_expires', expires);
+    if (data.refresh_token) localStorage.setItem('spotify_refresh', data.refresh_token);
+    return data.access_token;
+  }
+  return null;
+}
+
+async function getToken() {
+  const expires = parseInt(localStorage.getItem('spotify_expires') || '0');
+  if (Date.now() < expires - 60000) return localStorage.getItem('spotify_token');
+  return await refreshToken();
+}
+
+function logout() {
+  localStorage.removeItem('spotify_token');
+  localStorage.removeItem('spotify_refresh');
+  localStorage.removeItem('spotify_expires');
+  if (player) { player.disconnect(); player = null; }
+  document.getElementById('main-app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════
+// SPOTIFY WEB PLAYBACK SDK
+// ═══════════════════════════════════════════════════
+let player = null;
+let deviceId = null;
+let currentTracks = [];
+let currentIndex = 0;
+let isPlaying = false;
+let progressInterval = null;
+let trackDuration = 0;
+let trackPosition = 0;
+
+window.onSpotifyWebPlaybackSDKReady = () => {
+  const token = localStorage.getItem('spotify_token');
+  if (!token) return;
+  initPlayer(token);
+};
+
+function initPlayer(token) {
+  document.getElementById('sdk-notice').classList.add('show');
+
+  player = new Spotify.Player({
+    name: 'RoadTrip App',
+    getOAuthToken: async cb => { cb(await getToken()); },
+    volume: 0.8
+  });
+
+  player.addListener('ready', ({ device_id }) => {
+    deviceId = device_id;
+    document.getElementById('sdk-notice').classList.remove('show');
+    document.getElementById('play-btn').disabled = false;
+    console.log('Spotify player ready, device:', device_id);
+  });
+
+  player.addListener('not_ready', () => {
+    deviceId = null;
+    document.getElementById('play-btn').disabled = true;
+  });
+
+  player.addListener('player_state_changed', state => {
+    if (!state) return;
+    isPlaying = !state.paused;
+    trackDuration = state.duration;
+    trackPosition = state.position;
+    updatePlayBtn();
+
+    const t = state.track_window.current_track;
+    if (t) {
+      document.getElementById('np-song').textContent = t.name;
+      document.getElementById('np-artist').textContent = t.artists.map(a => a.name).join(', ');
+      const img = t.album.images[0]?.url;
+      if (img) {
+        document.getElementById('np-art-img').src = img;
+        document.getElementById('np-art-img').style.display = 'block';
+        document.getElementById('np-art-placeholder').style.display = 'none';
+      }
+      document.getElementById('time-total').textContent = formatTime(state.duration / 1000);
+    }
+
+    if (isPlaying) startProgress();
+    else stopProgress();
+  });
+
+  player.addListener('initialization_error', e => console.error('Init error:', e));
+  player.addListener('authentication_error', e => { console.error('Auth error:', e); logout(); });
+  player.addListener('account_error', e => {
+    document.getElementById('sdk-notice').textContent = '⚠️ Spotify Premium required for full playback.';
+    document.getElementById('sdk-notice').classList.add('show');
+  });
+
+  player.connect();
+}
+
+// ═══════════════════════════════════════════════════
+// SPOTIFY API CALLS
+// ═══════════════════════════════════════════════════
+async function spotifySearch(query) {
+  const token = await getToken();
+  const res = await fetch(
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`,
+    { headers: { Authorization: 'Bearer ' + token } }
+  );
+  const data = await res.json();
+  return data.tracks?.items?.[0] || null;
+}
+
+async function getUserProfile() {
+  const token = await getToken();
+  const res = await fetch('https://api.spotify.com/v1/me', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  return res.json();
+}
+
+async function playTrack(uri) {
+  if (!deviceId) {
+    alert('Spotify player not ready yet. Give it a few more seconds and try again.');
+    return;
+  }
+  const token = await getToken();
+  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris: [uri] })
+  });
+}
+
+async function playContext(uris) {
+  if (!deviceId) {
+    alert('Spotify player not ready yet. Give it a few more seconds and try again.');
+    return;
+  }
+  const token = await getToken();
+  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris })
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// REGION & TRACK LOGIC
+// ═══════════════════════════════════════════════════
+function buildRegionStrip() {
+  const strip = document.getElementById('region-strip');
+  Object.keys(MUSIC_DB).forEach(region => {
+    const chip = document.createElement('div');
+    chip.className = 'region-chip';
+    chip.dataset.region = region;
+    chip.textContent = MUSIC_DB[region].emoji + ' ' + region;
+    chip.onclick = () => selectRegion(region);
+    strip.appendChild(chip);
+  });
+}
+
+async function selectRegion(region) {
+  document.querySelectorAll('.region-chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.region === region));
+
+  const data = MUSIC_DB[region];
+  document.getElementById('np-region').textContent = data.emoji + ' ' + region.toUpperCase();
+  document.getElementById('np-why').textContent = data.why;
+
+  const list = document.getElementById('track-list');
+  list.innerHTML = `<div class="status-msg"><div class="spinner"></div>Searching Spotify for ${region}...</div>`;
+
+  const tracks = [];
+  for (const q of data.searches) {
+    const t = await spotifySearch(q);
+    if (t) tracks.push(t);
+  }
+
+  if (!tracks.length) {
+    list.innerHTML = `<div class="status-msg"><div class="big">😔</div>No tracks found for this region</div>`;
+    return;
+  }
+
+  currentTracks = tracks;
+  currentIndex = 0;
+  renderTracks();
+  previewTrack(tracks[0]);
+}
+
+function previewTrack(track) {
+  document.getElementById('np-song').textContent = track.name;
+  document.getElementById('np-artist').textContent = track.artists.map(a => a.name).join(', ');
+  const img = track.album.images[0]?.url;
+  if (img) {
+    document.getElementById('np-art-img').src = img;
+    document.getElementById('np-art-img').style.display = 'block';
+    document.getElementById('np-art-placeholder').style.display = 'none';
+  } else {
+    document.getElementById('np-art-img').style.display = 'none';
+    document.getElementById('np-art-placeholder').style.display = 'flex';
+  }
+  document.getElementById('time-total').textContent = formatTime(track.duration_ms / 1000);
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('time-current').textContent = '0:00';
+}
+
+function renderTracks() {
+  const list = document.getElementById('track-list');
+  list.innerHTML = '';
+  currentTracks.forEach((t, i) => {
+    const item = document.createElement('div');
+    item.className = 'track-item' + (i === currentIndex ? ' active' : '');
+    const img = t.album.images[2]?.url || t.album.images[0]?.url;
+    item.innerHTML = `
+      <div class="track-num">${i === currentIndex && isPlaying ? '▶' : (i+1)}</div>
+      <div class="track-mini-art">
+        ${img ? `<img src="${img}" alt="" loading="lazy">` : '<div class="mini-placeholder">🎵</div>'}
+      </div>
+      <div class="track-meta">
+        <div class="track-name">${t.name}</div>
+        <div class="track-artist">${t.artists.map(a=>a.name).join(', ')}</div>
+      </div>
+      <div class="track-duration">${formatTime(t.duration_ms/1000)}</div>
+    `;
+    item.onclick = () => {
+      currentIndex = i;
+      previewTrack(t);
+      playTrack(t.uri).then(() => renderTracks());
+    };
+    list.appendChild(item);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// PLAYBACK CONTROLS
+// ═══════════════════════════════════════════════════
+async function togglePlay() {
+  if (!player) return;
+  if (!isPlaying && currentTracks.length && !deviceId) {
+    alert('Spotify player still initializing. Please wait a moment.');
+    return;
+  }
+  if (!isPlaying && currentTracks.length) {
+    const uris = currentTracks.map(t => t.uri);
+    await playContext(uris);
+  } else {
+    await player.togglePlay();
+  }
+}
+
+function updatePlayBtn() {
+  const btn = document.getElementById('play-btn');
+  const eq = document.getElementById('eq-display');
+  if (isPlaying) {
+    btn.textContent = '';
+    btn.innerHTML = '⏸';
+    eq.style.display = 'flex';
+  } else {
+    btn.innerHTML = '▶';
+    eq.style.display = 'none';
+  }
+}
+
+function startProgress() {
+  stopProgress();
+  progressInterval = setInterval(async () => {
+    if (!player) return;
+    const state = await player.getCurrentState();
+    if (!state) return;
+    const pos = state.position;
+    const dur = state.duration;
+    if (dur > 0) {
+      document.getElementById('progress-fill').style.width = (pos/dur*100) + '%';
+      document.getElementById('time-current').textContent = formatTime(pos/1000);
+      document.getElementById('time-total').textContent = formatTime(dur/1000);
+    }
+  }, 1000);
+}
+
+function stopProgress() {
+  if (progressInterval) clearInterval(progressInterval);
+}
+
+function formatTime(s) {
+  s = Math.floor(s);
+  return Math.floor(s/60) + ':' + (s%60 < 10 ? '0' : '') + (s%60);
+}
+
+// ═══════════════════════════════════════════════════
+// GEOLOCATION
+// ═══════════════════════════════════════════════════
+let totalMiles = 0;
+let lastPos = null;
+let watchId = null;
+
+function requestLocation() {
+  const btn = document.getElementById('loc-btn');
+  btn.textContent = '...';
+  btn.disabled = true;
+  if (!navigator.geolocation) {
+    document.getElementById('loc-city').textContent = 'Not supported';
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    document.getElementById('loc-coords').textContent = lat.toFixed(4) + '° , ' + lng.toFixed(4) + '°';
+    document.getElementById('loc-strip').classList.add('active');
+    btn.textContent = 'UPDATE';
+    btn.disabled = false;
+    reverseGeocode(lat, lng);
+    startTracking();
+  }, () => {
+    document.getElementById('loc-city').textContent = 'Denied — pick a region below';
+    btn.textContent = 'RETRY';
+    btn.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+function startTracking() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+  watchId = navigator.geolocation.watchPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    if (lastPos) {
+      totalMiles += haversine(lastPos.lat, lastPos.lng, lat, lng);
+      document.getElementById('distance-display').textContent = totalMiles.toFixed(1);
+    }
+    lastPos = { lat, lng };
+    document.getElementById('loc-coords').textContent = lat.toFixed(4) + '° , ' + lng.toFixed(4) + '°';
+  }, null, { enableHighAccuracy: true });
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 3958.8, r = Math.PI/180;
+  const dLat = (lat2-lat1)*r, dLon = (lon2-lon1)*r;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+async function reverseGeocode(lat, lng) {
+  document.getElementById('loc-city').textContent = 'Locating...';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers:{'Accept-Language':'en'} });
+    const d = await res.json();
+    const city = d.address.city || d.address.town || d.address.village || d.address.county || 'Unknown';
+    const state = d.address.state || '';
+    document.getElementById('loc-city').textContent = city + (state ? ', ' + state : '');
+    autoMatchRegion(city, state);
+  } catch(e) {
+    document.getElementById('loc-city').textContent = 'Location found';
+  }
+}
+
+function autoMatchRegion(city, state) {
+  for (const region of Object.keys(MUSIC_DB)) {
+    if (region.toLowerCase().includes(city.toLowerCase())) { selectRegion(region); return; }
+  }
+  for (const region of Object.keys(MUSIC_DB)) {
+    const abbr = state.match(/[A-Z]{2}$/)?.[0] || '';
+    if (abbr && region.includes(abbr)) { selectRegion(region); return; }
+  }
+  selectRegion('On the Highway');
+}
+
+// ═══════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════
+document.getElementById('login-btn').onclick = async (e) => {
+  e.preventDefault();
+  await redirectToSpotify();
+};
+
+async function boot() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+
+  // Coming back from Spotify auth
+  if (code) {
+    window.history.replaceState({}, '', REDIRECT_URI);
+    try {
+      await exchangeCodeForToken(code);
+    } catch(e) {
+      console.error('Token exchange failed:', e);
+      return;
+    }
+  }
+
+  const token = localStorage.getItem('spotify_token');
+  const expires = parseInt(localStorage.getItem('spotify_expires') || '0');
+
+  if (token && Date.now() < expires) {
+    // Show app
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+    buildRegionStrip();
+    initPlayer(token);
+
+    // Load user profile
+    try {
+      const profile = await getUserProfile();
+      document.getElementById('user-display-name').textContent = profile.display_name || profile.id;
+      if (profile.images?.[0]?.url) {
+        document.getElementById('user-avatar').innerHTML = `<img src="${profile.images[0].url}" alt="">`;
+      }
+    } catch(e) {}
+
+    // Default region
+    selectRegion('On the Highway');
+  } else {
+    // Show login
+    document.getElementById('login-screen').style.display = 'block';
+    document.getElementById('main-app').style.display = 'none';
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
