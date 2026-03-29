@@ -1,4 +1,4 @@
-alabama<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -5228,12 +5228,12 @@ const MUSIC_DB = {
     "My Girl The Temptations",
     "Seven Nation Army The White Stripes",
     "I Heard It Through the Grapevine Marvin Gaye",
-    "Stop! In the Name of Love The Supremes",
+    "Respect Aretha Franklin",
     "I Can't Help Myself Four Tops",
     "My Girl The Temptations",
-    "Seven Nation Army The White Stripes",
+    "Eminem Lose Yourself ",
     "Dancing in the Street Martha and the Vandellas",
-    "I Heard It Through the Grapevine Marvin Gaye",
+    "Night Moves Bob Seger",
     "Stop! In the Name of Love The Supremes"
     ]
   },
@@ -7065,11 +7065,11 @@ const MUSIC_DB = {
     emoji: "🎈",
     why: "Urban Southwest blend of indie rock and desert folk",
     searches: [
-    "Albuquerque Weird Al Yankovic",
+    "Albuquerque "Weird Al" Yankovic",
     "Albuquerque Neil Young",
     "Route 66 Chuck Berry",
     "Take It Easy Eagles",
-    "Albuquerque Turkey Johnny Guitar Watson",
+    "Albuquerque Turkey Johnny "Guitar" Watson",
     "Someday The Shins",
     "New Slang The Shins",
     "Caring Is Creepy The Shins",
@@ -11612,6 +11612,7 @@ const MUSIC_DB = {
   },
 };
 
+
 // ═══════════════════════════════════════════════════
 // AUTH — PKCE flow (no client secret needed)
 // ═══════════════════════════════════════════════════
@@ -11915,7 +11916,11 @@ async function pollPlayback() {
 async function queueNextTrack() {
   const region = currentRegionKey || 'On the Highway';
   const data   = MUSIC_DB[region];
-  if (!data) return;
+  console.log('🎵 queueNextTrack — current region:', region);
+  if (!data) {
+    console.log('⚠️ No data found for region:', region, '— falling back to On the Highway');
+    return;
+  }
 
   const usedUris = new Set(playHistory.map(t => t.uri));
   const candidates = [...data.searches];
@@ -11932,6 +11937,8 @@ async function queueNextTrack() {
     next = await spotifySearch(candidates[0]);
   }
   if (!next) return;
+
+  console.log('⏭ Next track queued:', next.name, 'by', next.artists?.map(a=>a.name).join(', '), '| region:', region);
 
   next.region = region;
   nextTrackReady = next;
@@ -12437,6 +12444,8 @@ function autoMatchRegion(city, state, force = false) {
   }
 
   if (!matched) matched = 'On the Highway';
+
+  console.log('📍 autoMatchRegion — city:', city, '| state:', state, '| matched:', matched);
 
   // Update state tracking
   currentStateKey = newState;
