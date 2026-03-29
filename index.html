@@ -357,6 +357,21 @@ const SCOPES = [
 ].join(' ');
 
 // ═══════════════════════════════════════════════════
+// MOBILE DETECTION
+// ═══════════════════════════════════════════════════
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+function trackIdFromUri(uri) { return uri.split(':')[2]; }
+
+function openInSpotifyApp(uri) {
+  const id = trackIdFromUri(uri);
+  const appLink = 'spotify:track:' + id;
+  const webLink = 'https://open.spotify.com/track/' + id;
+  window.location.href = appLink;
+  setTimeout(() => { window.open(webLink, '_blank'); }, 1500);
+}
+
+// ═══════════════════════════════════════════════════
 // MUSIC DATABASE
 // ═══════════════════════════════════════════════════
 const MUSIC_DB = {
@@ -489,6 +504,7 @@ let trackDuration = 0;
 let trackPosition = 0;
 
 window.onSpotifyWebPlaybackSDKReady = () => {
+  if (IS_MOBILE) return; // SDK doesn't work on iOS/Android — use app deep links instead
   const token = localStorage.getItem('spotify_token');
   if (!token) return;
   initPlayer(token);
@@ -677,7 +693,11 @@ function renderTracks() {
     item.onclick = () => {
       currentIndex = i;
       previewTrack(t);
-      playTrack(t.uri).then(() => renderTracks());
+      if (IS_MOBILE) {
+        openInSpotifyApp(t.uri);
+      } else {
+        playTrack(t.uri).then(() => renderTracks());
+      }
     };
     list.appendChild(item);
   });
@@ -687,6 +707,13 @@ function renderTracks() {
 // PLAYBACK CONTROLS
 // ═══════════════════════════════════════════════════
 async function togglePlay() {
+  // ── Mobile: open track in Spotify app ──
+  if (IS_MOBILE) {
+    if (!currentTracks.length) return;
+    openInSpotifyApp(currentTracks[currentIndex].uri);
+    return;
+  }
+  // ── Desktop: use Web Playback SDK ──
   if (!player) return;
   if (!isPlaying && currentTracks.length && !deviceId) {
     alert('Spotify player still initializing. Please wait a moment.');
@@ -844,7 +871,16 @@ async function boot() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
     buildRegionStrip();
-    initPlayer(token);
+
+    if (IS_MOBILE) {
+      // Mobile path — no SDK, just enable the button and show a hint
+      document.getElementById('play-btn').disabled = false;
+      document.getElementById('sdk-notice').textContent = '📱 Tap play to open tracks in the Spotify app';
+      document.getElementById('sdk-notice').classList.add('show');
+    } else {
+      // Desktop path — fire up the Web Playback SDK
+      initPlayer(token);
+    }
 
     // Load user profile
     try {
