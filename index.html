@@ -288,6 +288,7 @@
       <div class="loc-main">
         <div class="loc-city" id="loc-city">Tap LOCATE to find your position</div>
         <div class="loc-coords" id="loc-coords">---.---- , ---.----</div>
+        <div id="loc-next-update" style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px"></div>
       </div>
       <button class="loc-btn" id="loc-btn" onclick="requestLocation()">LOCATE</button>
     </div>
@@ -331,8 +332,8 @@
       </div>
     </div>
 
-    <!-- Track queue -->
-    <div class="section-label">Queue</div>
+    <!-- Recently played — history only, no peeking ahead -->
+    <div class="section-label">Recently played</div>
     <div class="track-list" id="track-list">
       <div class="status-msg">
         <div class="big">🗺️</div>
@@ -613,8 +614,11 @@ async function playContext(uris) {
 }
 
 // ═══════════════════════════════════════════════════
-// REGION & TRACK LOGIC
+// REGION & SURPRISE TRACK LOGIC
 // ═══════════════════════════════════════════════════
+let playHistory = []; // tracks played this session (uri + region)
+let currentTrack = null;
+
 function buildRegionStrip() {
   const strip = document.getElementById('region-strip');
   Object.keys(MUSIC_DB).forEach(region => {
@@ -622,40 +626,61 @@ function buildRegionStrip() {
     chip.className = 'region-chip';
     chip.dataset.region = region;
     chip.textContent = MUSIC_DB[region].emoji + ' ' + region;
-    chip.onclick = () => selectRegion(region);
+    chip.onclick = () => {
+      currentRegionKey = region;
+      pickAndPlayNextSong(region);
+    };
     strip.appendChild(chip);
   });
 }
 
-async function selectRegion(region) {
+async function pickAndPlayNextSong(region) {
   document.querySelectorAll('.region-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.region === region));
 
   const data = MUSIC_DB[region];
   document.getElementById('np-region').textContent = data.emoji + ' ' + region.toUpperCase();
   document.getElementById('np-why').textContent = data.why;
+  document.getElementById('np-song').textContent = 'Finding your next track...';
+  document.getElementById('np-artist').textContent = '—';
 
-  const list = document.getElementById('track-list');
-  list.innerHTML = `<div class="status-msg"><div class="spinner"></div>Searching Spotify for ${region}...</div>`;
+  const usedUris = new Set(playHistory.map(t => t.uri));
+  const candidates = [...data.searches];
+  shuffleArray(candidates);
 
-  const tracks = [];
-  for (const q of data.searches) {
+  let picked = null;
+  for (const q of candidates) {
     const t = await spotifySearch(q);
-    if (t) tracks.push(t);
+    if (t && !usedUris.has(t.uri)) { picked = t; break; }
   }
-
-  if (!tracks.length) {
-    list.innerHTML = `<div class="status-msg"><div class="big">😔</div>No tracks found for this region</div>`;
-    return;
+  // All songs played for this region — reset and pick fresh
+  if (!picked) {
+    playHistory = playHistory.filter(t => t.region !== region);
+    picked = await spotifySearch(candidates[0]);
   }
+  if (!picked) return;
 
-  currentTracks = tracks;
-  currentIndex = 0;
-  renderTracks();
-  previewTrack(tracks[0]);
+  picked.region = region;
+  currentTrack = picked;
+  playHistory.unshift({ uri: picked.uri, region });
+  if (playHistory.length > 50) playHistory.pop();
+
+  updateNowPlaying(picked);
+  addToHistory(picked, region);
+
+  if (!IS_MOBILE && deviceId) {
+    await playTrack(picked.uri);
+  }
 }
 
-function previewTrack(track) {
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function updateNowPlaying(track) {
   document.getElementById('np-song').textContent = track.name;
   document.getElementById('np-artist').textContent = track.artists.map(a => a.name).join(', ');
   const img = track.album.images[0]?.url;
@@ -672,56 +697,53 @@ function previewTrack(track) {
   document.getElementById('time-current').textContent = '0:00';
 }
 
-function renderTracks() {
+function addToHistory(track, region) {
   const list = document.getElementById('track-list');
-  list.innerHTML = '';
-  currentTracks.forEach((t, i) => {
-    const item = document.createElement('div');
-    item.className = 'track-item' + (i === currentIndex ? ' active' : '');
-    const img = t.album.images[2]?.url || t.album.images[0]?.url;
-    item.innerHTML = `
-      <div class="track-num">${i === currentIndex && isPlaying ? '▶' : (i+1)}</div>
-      <div class="track-mini-art">
-        ${img ? `<img src="${img}" alt="" loading="lazy">` : '<div class="mini-placeholder">🎵</div>'}
-      </div>
-      <div class="track-meta">
-        <div class="track-name">${t.name}</div>
-        <div class="track-artist">${t.artists.map(a=>a.name).join(', ')}</div>
-      </div>
-      <div class="track-duration">${formatTime(t.duration_ms/1000)}</div>
-    `;
-    item.onclick = () => {
-      currentIndex = i;
-      previewTrack(t);
-      if (IS_MOBILE) {
-        openInSpotifyApp(t.uri);
-      } else {
-        playTrack(t.uri).then(() => renderTracks());
-      }
-    };
-    list.appendChild(item);
-  });
+  const placeholder = list.querySelector('.status-msg');
+  if (placeholder) placeholder.remove();
+
+  const img = track.album.images[2]?.url || track.album.images[0]?.url;
+  const item = document.createElement('div');
+  item.className = 'track-item';
+  item.innerHTML = `
+    <div class="track-num" style="color:var(--muted);font-size:10px">✓</div>
+    <div class="track-mini-art">
+      ${img ? `<img src="${img}" alt="" loading="lazy">` : '<div class="mini-placeholder">🎵</div>'}
+    </div>
+    <div class="track-meta">
+      <div class="track-name">${track.name}</div>
+      <div class="track-artist">${track.artists.map(a=>a.name).join(', ')} · ${MUSIC_DB[region]?.emoji || ''} ${region}</div>
+    </div>
+    <div class="track-duration">${formatTime(track.duration_ms/1000)}</div>
+  `;
+  list.insertBefore(item, list.firstChild);
+  const items = list.querySelectorAll('.track-item');
+  if (items.length > 10) items[items.length - 1].remove();
+}
+
+async function selectRegion(region) {
+  currentRegionKey = region;
+  await pickAndPlayNextSong(region);
 }
 
 // ═══════════════════════════════════════════════════
 // PLAYBACK CONTROLS
 // ═══════════════════════════════════════════════════
 async function togglePlay() {
-  // ── Mobile: open track in Spotify app ──
+  // ── Mobile: open current track in Spotify app ──
   if (IS_MOBILE) {
-    if (!currentTracks.length) return;
-    openInSpotifyApp(currentTracks[currentIndex].uri);
+    if (!currentTrack) return;
+    openInSpotifyApp(currentTrack.uri);
     return;
   }
   // ── Desktop: use Web Playback SDK ──
   if (!player) return;
-  if (!isPlaying && currentTracks.length && !deviceId) {
+  if (!isPlaying && currentTrack && !deviceId) {
     alert('Spotify player still initializing. Please wait a moment.');
     return;
   }
-  if (!isPlaying && currentTracks.length) {
-    const uris = currentTracks.map(t => t.uri);
-    await playContext(uris);
+  if (!isPlaying && currentTrack) {
+    await playTrack(currentTrack.uri);
   } else {
     await player.togglePlay();
   }
@@ -766,11 +788,15 @@ function formatTime(s) {
 }
 
 // ═══════════════════════════════════════════════════
-// GEOLOCATION
+// GEOLOCATION — auto-polls every 5 min
 // ═══════════════════════════════════════════════════
 let totalMiles = 0;
 let lastPos = null;
 let watchId = null;
+let locationPollTimer = null;
+let currentRegionKey = null; // track active region so we only change music when region changes
+
+const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes in ms
 
 function requestLocation() {
   const btn = document.getElementById('loc-btn');
@@ -787,7 +813,8 @@ function requestLocation() {
     btn.textContent = 'UPDATE';
     btn.disabled = false;
     reverseGeocode(lat, lng);
-    startTracking();
+    startOdometer();
+    startLocationPolling(); // kick off auto-refresh
   }, () => {
     document.getElementById('loc-city').textContent = 'Denied — pick a region below';
     btn.textContent = 'RETRY';
@@ -795,7 +822,8 @@ function requestLocation() {
   }, { enableHighAccuracy: true, timeout: 10000 });
 }
 
-function startTracking() {
+// Odometer — watches position continuously for mileage only
+function startOdometer() {
   if (watchId) navigator.geolocation.clearWatch(watchId);
   watchId = navigator.geolocation.watchPosition(pos => {
     const { latitude: lat, longitude: lng } = pos.coords;
@@ -808,6 +836,35 @@ function startTracking() {
   }, null, { enableHighAccuracy: true });
 }
 
+// Auto-poll location every 5 minutes and update music if region changed
+function startLocationPolling() {
+  if (locationPollTimer) clearInterval(locationPollTimer);
+  locationPollTimer = setInterval(() => {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      document.getElementById('loc-coords').textContent = lat.toFixed(4) + '° , ' + lng.toFixed(4) + '°';
+      reverseGeocodeQuiet(lat, lng); // silent update — only changes music if region changed
+      showNextUpdateCountdown(); // reset the countdown display
+    }, null, { enableHighAccuracy: true, timeout: 10000 });
+  }, POLL_INTERVAL);
+  showNextUpdateCountdown();
+}
+
+// Countdown ticker shown in loc-coords subtitle area
+let countdownTimer = null;
+function showNextUpdateCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  let secondsLeft = POLL_INTERVAL / 1000;
+  countdownTimer = setInterval(() => {
+    secondsLeft -= 1;
+    if (secondsLeft <= 0) { clearInterval(countdownTimer); return; }
+    const m = Math.floor(secondsLeft / 60);
+    const s = secondsLeft % 60;
+    const tick = document.getElementById('loc-next-update');
+    if (tick) tick.textContent = 'Next update in ' + m + ':' + (s < 10 ? '0' : '') + s;
+  }, 1000);
+}
+
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 3958.8, r = Math.PI/180;
   const dLat = (lat2-lat1)*r, dLon = (lon2-lon1)*r;
@@ -815,6 +872,7 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// First-time geocode — always triggers a region + music update
 async function reverseGeocode(lat, lng) {
   document.getElementById('loc-city').textContent = 'Locating...';
   try {
@@ -823,21 +881,40 @@ async function reverseGeocode(lat, lng) {
     const city = d.address.city || d.address.town || d.address.village || d.address.county || 'Unknown';
     const state = d.address.state || '';
     document.getElementById('loc-city').textContent = city + (state ? ', ' + state : '');
-    autoMatchRegion(city, state);
+    autoMatchRegion(city, state, true); // force=true on first load
   } catch(e) {
     document.getElementById('loc-city').textContent = 'Location found';
   }
 }
 
-function autoMatchRegion(city, state) {
+// Silent geocode — only triggers music change if region actually changed
+async function reverseGeocodeQuiet(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers:{'Accept-Language':'en'} });
+    const d = await res.json();
+    const city = d.address.city || d.address.town || d.address.village || d.address.county || 'Unknown';
+    const state = d.address.state || '';
+    document.getElementById('loc-city').textContent = city + (state ? ', ' + state : '');
+    autoMatchRegion(city, state, false); // force=false — only updates if region changed
+  } catch(e) { /* silent */ }
+}
+
+function autoMatchRegion(city, state, force = false) {
+  let matched = 'On the Highway';
   for (const region of Object.keys(MUSIC_DB)) {
-    if (region.toLowerCase().includes(city.toLowerCase())) { selectRegion(region); return; }
+    if (region.toLowerCase().includes(city.toLowerCase())) { matched = region; break; }
   }
-  for (const region of Object.keys(MUSIC_DB)) {
-    const abbr = state.match(/[A-Z]{2}$/)?.[0] || '';
-    if (abbr && region.includes(abbr)) { selectRegion(region); return; }
+  if (matched === 'On the Highway') {
+    for (const region of Object.keys(MUSIC_DB)) {
+      const abbr = state.match(/[A-Z]{2}$/)?.[0] || '';
+      if (abbr && region.includes(abbr)) { matched = region; break; }
+    }
   }
-  selectRegion('On the Highway');
+  // Only switch music if region actually changed (or it's the first load)
+  if (force || matched !== currentRegionKey) {
+    currentRegionKey = matched;
+    pickAndPlayNextSong(matched);
+  }
 }
 
 // ═══════════════════════════════════════════════════
