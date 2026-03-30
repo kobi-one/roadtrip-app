@@ -11610,8 +11610,6 @@ const MUSIC_DB = {
     "Flightless Bird, American Mouth Iron & Wine"
     ]
   },
-};
-
 
 // ═══════════════════════════════════════════════════
 // AUTH — PKCE flow (no client secret needed)
@@ -11867,21 +11865,23 @@ async function pollPlayback() {
   const duration  = state.item.duration_ms;
   const remaining = duration - progress;
 
-  // Update UI if track changed
+  // ── Track changed ──
   if (uri !== lastKnownUri) {
     lastKnownUri = uri;
     nextQueued = false;
-    isPlaying = !state.is_playing ? false : true;
+    isPlaying = state.is_playing;
     updatePlayBtn();
 
-    // If the track that's now playing is our pre-fetched nextTrackReady, update the UI
+    // Check if this is our pre-fetched track
     if (nextTrackReady && nextTrackReady.uri === uri) {
       updateNowPlaying(nextTrackReady);
       addToHistory(nextTrackReady, currentRegionKey || 'On the Highway');
       currentTrack = nextTrackReady;
       nextTrackReady = null;
     } else {
-      // Update UI from Spotify state directly and log to trip
+      // Spotify played something from its own queue that we didn't choose
+      // Immediately take back control — pick our own next track
+      console.log('⚠️ Spotify played an uncontrolled track:', state.item.name, '— taking back control');
       document.getElementById('np-song').textContent   = state.item.name;
       document.getElementById('np-artist').textContent = state.item.artists.map(a=>a.name).join(', ');
       const img = state.item.album?.images?.[0]?.url;
@@ -11890,12 +11890,14 @@ async function pollPlayback() {
         document.getElementById('np-art-img').style.display = 'block';
         document.getElementById('np-art-placeholder').style.display = 'none';
       }
-      // Log to trip even when track came from outside our queue
       tripLogSong(state.item, currentRegionKey || 'On the Highway');
+      // Pre-fetch our next track immediately so we're ready
+      nextQueued = true;
+      prefetchNextTrack();
     }
   }
 
-  // Update progress bar from Spotify state (works on mobile too)
+  // Update progress bar
   if (duration > 0) {
     document.getElementById('progress-fill').style.width = (progress/duration*100) + '%';
     document.getElementById('time-current').textContent = formatTime(progress/1000);
@@ -11905,11 +11907,70 @@ async function pollPlayback() {
   isPlaying = state.is_playing;
   updatePlayBtn();
 
-  // Pre-fetch & queue the next track when < 25s remain
-  if (remaining < 25000 && !nextQueued) {
+  // With 8 seconds remaining, directly play our next track
+  // Using /play instead of /queue completely bypasses Spotify's existing queue
+  if (remaining < 8000 && remaining > 0 && !nextQueued) {
     nextQueued = true;
-    queueNextTrack();
+    await playNextTrackDirect();
   }
+}
+
+// Pre-fetch next track without playing — so it's ready when we need it
+async function prefetchNextTrack() {
+  const region = currentRegionKey || 'On the Highway';
+  const data   = MUSIC_DB[region];
+  console.log('🎵 prefetchNextTrack — region:', region);
+  if (!data) return;
+
+  const usedUris = new Set(playHistory.map(t => t.uri));
+  const candidates = [...data.searches];
+  shuffleArray(candidates);
+
+  let next = null;
+  for (const q of candidates) {
+    const t = await spotifySearch(q);
+    if (t && !usedUris.has(t.uri) && t.uri !== lastKnownUri) { next = t; break; }
+  }
+  if (!next) {
+    playHistory = playHistory.filter(t => t.region !== region);
+    next = await spotifySearch(candidates[0]);
+  }
+  if (!next) return;
+
+  next.region = region;
+  nextTrackReady = next;
+  playHistory.unshift({ uri: next.uri, region });
+  if (playHistory.length > 50) playHistory.pop();
+  console.log('⏭ Pre-fetched:', next.name, 'by', next.artists?.map(a=>a.name).join(', '));
+}
+
+// Called 8 seconds before current track ends — plays our track directly
+// This completely bypasses Spotify's queue, preventing it from inserting its own songs
+async function playNextTrackDirect() {
+  // First pre-fetch if we don't have one ready
+  if (!nextTrackReady) await prefetchNextTrack();
+  if (!nextTrackReady) return;
+
+  const track = nextTrackReady;
+  console.log('▶ Playing next track directly:', track.name, '| region:', currentRegionKey);
+
+  // Schedule the play for when the current track ends
+  // We wait for the remaining time then call /play
+  const state = await getPlaybackState();
+  if (!state) return;
+  const waitMs = Math.max(0, (state.item.duration_ms - state.progress_ms) - 500);
+
+  setTimeout(async () => {
+    // Double-check we haven't already advanced
+    if (lastKnownUri === track.uri) return;
+    await connectPlay(track.uri);
+    updateNowPlaying(track);
+    addToHistory(track, currentRegionKey || 'On the Highway');
+    currentTrack = track;
+    lastKnownUri = track.uri;
+    nextTrackReady = null;
+    nextQueued = false;
+  }, waitMs);
 }
 
 // Pre-fetch the next location-aware track and silently add it to Spotify's queue
@@ -11937,8 +11998,6 @@ async function queueNextTrack() {
     next = await spotifySearch(candidates[0]);
   }
   if (!next) return;
-
-  console.log('⏭ Next track queued:', next.name, 'by', next.artists?.map(a=>a.name).join(', '), '| region:', region);
 
   next.region = region;
   nextTrackReady = next;
@@ -12001,15 +12060,21 @@ async function skipTrack() {
   btn.disabled = true;
   tripLog.totalSkips++;
 
-  // Force-pick a new track for the current region and queue it, then skip
+  // Pre-fetch the next location-aware track then play it directly
   nextQueued = false;
-  await queueNextTrack();
-
-  // Skip to it on Spotify
-  await spotifyAPI('POST', '/me/player/next');
+  nextTrackReady = null;
+  await prefetchNextTrack();
+  if (nextTrackReady) {
+    await connectPlay(nextTrackReady.uri);
+    updateNowPlaying(nextTrackReady);
+    addToHistory(nextTrackReady, currentRegionKey || 'On the Highway');
+    currentTrack = nextTrackReady;
+    lastKnownUri = nextTrackReady.uri;
+    nextTrackReady = null;
+  }
 
   setTimeout(() => { btn.disabled = false; }, 2000);
-  showNotice('⏭ Skipped — next track queued');
+  showNotice('⏭ Skipped to next location track');
 }
 // ═══════════════════════════════════════════════════
 let playHistory = []; // tracks played this session (uri + region)
@@ -12065,13 +12130,13 @@ async function pickAndPlayNextSong(region) {
 
   if (IS_MOBILE) {
     if (connectStarted) {
-      // Already playing — just queue the new track silently, it'll play next
+      // Already playing — directly play the new track, bypassing Spotify's queue
       nextQueued = false;
       nextTrackReady = picked;
-      await connectQueue(picked.uri);
-      showNotice('🎵 Queued in Spotify: ' + picked.name);
+      await connectPlay(picked.uri);
+      lastKnownUri = picked.uri;
+      showNotice('🎵 Now playing: ' + picked.name);
     } else {
-      // First play — need one user tap, handled by togglePlay
       showNotice('▶ Tap play to start. After that it runs automatically.');
     }
   } else {
@@ -12287,10 +12352,17 @@ function startOdometer() {
   watchId = navigator.geolocation.watchPosition(pos => {
     const { latitude: lat, longitude: lng } = pos.coords;
     if (lastPos) {
-      totalMiles += haversine(lastPos.lat, lastPos.lng, lat, lng);
-      document.getElementById('distance-display').textContent = totalMiles.toFixed(1);
+      const distanceMiles = haversine(lastPos.lat, lastPos.lng, lat, lng);
+      // Only count movement greater than 50 meters (0.031 miles)
+      // This filters out GPS drift while stationary
+      if (distanceMiles > 0.031) {
+        totalMiles += distanceMiles;
+        document.getElementById('distance-display').textContent = totalMiles.toFixed(1);
+        lastPos = { lat, lng };
+      }
+    } else {
+      lastPos = { lat, lng };
     }
-    lastPos = { lat, lng };
     document.getElementById('loc-coords').textContent = lat.toFixed(4) + '° , ' + lng.toFixed(4) + '°';
   }, null, { enableHighAccuracy: true });
 }
