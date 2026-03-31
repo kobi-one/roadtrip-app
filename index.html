@@ -11612,7 +11612,6 @@ const MUSIC_DB = {
   },
 };
 
-
 // ═══════════════════════════════════════════════════
 // AUTH — PKCE flow (no client secret needed)
 // ═══════════════════════════════════════════════════
@@ -11824,6 +11823,22 @@ async function connectPlay(uri) {
     return false;
   }
   connectDeviceId = target.id;
+
+  // Step 1 — Transfer playback to this device first
+  // This wakes Spotify up and makes the device active before we send the play command
+  try {
+    await spotifyAPI('PUT', '/me/player', {
+      device_ids: [connectDeviceId],
+      play: false  // transfer without auto-playing
+    });
+    // Give Spotify 800ms to register the transfer
+    await new Promise(r => setTimeout(r, 800));
+  } catch(e) {
+    console.log('Transfer playback warning:', e);
+    // Non-fatal — continue and try to play anyway
+  }
+
+  // Step 2 — Now play the track
   const res = await spotifyAPI('PUT',
     '/me/player/play?device_id=' + connectDeviceId,
     { uris: [uri] }
@@ -12258,8 +12273,8 @@ async function togglePlay() {
     if (!currentTrack) return;
 
     if (!connectStarted) {
-      // ── FIRST TAP: hand off to Spotify Connect ──
-      showNotice('⏳ Connecting to Spotify...');
+      // ── FIRST TAP: transfer playback then play ──
+      showNotice('⏳ Waking up Spotify...');
       document.getElementById('play-btn').disabled = true;
       const ok = await connectPlay(currentTrack.uri);
       document.getElementById('play-btn').disabled = false;
@@ -12269,7 +12284,7 @@ async function togglePlay() {
         isPlaying = true;
         updatePlayBtn();
         document.getElementById('skip-btn').disabled = false;
-        startConnectPoller();   // now polls every 5s — auto-advances forever
+        startConnectPoller();
         showNotice('🎵 Playing on Spotify — auto-advances as you drive!');
       } else {
         showNotice('📱 Open Spotify app first, then tap play.');
