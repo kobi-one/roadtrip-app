@@ -5272,9 +5272,9 @@ const MUSIC_DB = {
     "Search and Destroy Iggy and The Stooges",
     "New Rose The Damned",
     "High Time MC5",
-    "disarm the smashing pumpkins",
-    "wait for the moment vulfpeck",
-    "Mr. Brightside the Killers",
+    "Kick Out the Jams MC5",
+    "Wait for the Moment Vulpeck",
+    "Mr. brightside the killers",
     "The Passenger Iggy Pop",
     "Shakin' Street MC5"
     ]
@@ -11611,6 +11611,8 @@ const MUSIC_DB = {
     ]
   },
 };
+
+
 // ═══════════════════════════════════════════════════
 // AUTH — PKCE flow (no client secret needed)
 // ═══════════════════════════════════════════════════
@@ -11928,12 +11930,16 @@ async function prefetchNextTrack() {
 
   let next = null;
   for (const q of candidates) {
-    const t = await spotifySearch(q);
-    if (t && !usedUris.has(t.uri) && t.uri !== lastKnownUri) { next = t; break; }
+    try {
+      const cleanQ = q.replace(/['']/g, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+      const t = await spotifySearch(cleanQ);
+      if (t && !usedUris.has(t.uri) && t.uri !== lastKnownUri) { next = t; break; }
+    } catch(e) {}
   }
   if (!next) {
     playHistory = playHistory.filter(t => t.region !== region);
-    next = await spotifySearch(candidates[0]);
+    const cleanQ = candidates[0].replace(/['']/g, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+    next = await spotifySearch(cleanQ);
   }
   if (!next) return;
 
@@ -12100,6 +12106,13 @@ async function pickAndPlayNextSong(region) {
     c.classList.toggle('active', c.dataset.region === region));
 
   const data = MUSIC_DB[region];
+  if (!data) {
+    // Region not in database — fall back to highway
+    console.log('⚠️ Region not found in DB:', region, '— falling back to On the Highway');
+    if (region !== 'On the Highway') { pickAndPlayNextSong('On the Highway'); return; }
+    return;
+  }
+
   document.getElementById('np-region').textContent = data.emoji + ' ' + region.toUpperCase();
   document.getElementById('np-why').textContent = data.why;
   document.getElementById('np-song').textContent = 'Finding your next track...';
@@ -12110,15 +12123,49 @@ async function pickAndPlayNextSong(region) {
   shuffleArray(candidates);
 
   let picked = null;
+
+  // Pass 1 — try each search term, skip already-played tracks
   for (const q of candidates) {
-    const t = await spotifySearch(q);
-    if (t && !usedUris.has(t.uri)) { picked = t; break; }
+    try {
+      // Strip special characters from query to improve Spotify search reliability
+      const cleanQ = q.replace(/['']/g, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+      const t = await spotifySearch(cleanQ);
+      if (t && !usedUris.has(t.uri)) { picked = t; break; }
+    } catch(e) { console.log('Search error for:', q, e); }
   }
+
+  // Pass 2 — history full, reset and try again
   if (!picked) {
     playHistory = playHistory.filter(t => t.region !== region);
-    picked = await spotifySearch(candidates[0]);
+    for (const q of candidates) {
+      try {
+        const cleanQ = q.replace(/['']/g, '').replace(/[^a-zA-Z0-9 ]/g, ' ').trim();
+        const t = await spotifySearch(cleanQ);
+        if (t) { picked = t; break; }
+      } catch(e) {}
+    }
   }
-  if (!picked) return;
+
+  // Pass 3 — try just the artist name from the first search term
+  if (!picked) {
+    try {
+      const artistOnly = candidates[0].split(' ').slice(-2).join(' ');
+      picked = await spotifySearch(artistOnly);
+    } catch(e) {}
+  }
+
+  // Pass 4 — fall back to On the Highway rather than getting stuck
+  if (!picked) {
+    console.log('⚠️ No tracks found for', region, '— falling back to On the Highway');
+    if (region !== 'On the Highway') {
+      showNotice('📻 Switching to highway mode — no tracks found for ' + region);
+      pickAndPlayNextSong('On the Highway');
+      return;
+    }
+    document.getElementById('np-song').textContent = 'No tracks found';
+    document.getElementById('np-artist').textContent = 'Check your Spotify connection';
+    return;
+  }
 
   picked.region = region;
   currentTrack = picked;
@@ -12130,7 +12177,6 @@ async function pickAndPlayNextSong(region) {
 
   if (IS_MOBILE) {
     if (connectStarted) {
-      // Already playing — directly play the new track, bypassing Spotify's queue
       nextQueued = false;
       nextTrackReady = picked;
       await connectPlay(picked.uri);
@@ -12140,7 +12186,6 @@ async function pickAndPlayNextSong(region) {
       showNotice('▶ Tap play to start. After that it runs automatically.');
     }
   } else {
-    // Desktop — SDK handles it
     if (deviceId) {
       lastKnownUri = picked.uri;
       await connectPlay(picked.uri);
